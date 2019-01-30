@@ -11,6 +11,20 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/gogo/protobuf/proto"
+	"github.com/kata-containers/agent/pkg/uevent"
+	pb "github.com/kata-containers/agent/protocols/grpc"
+	"github.com/opencontainers/runc/libcontainer"
+	"github.com/opencontainers/runc/libcontainer/configs"
+	_ "github.com/opencontainers/runc/libcontainer/nsenter"
+	"github.com/opencontainers/runc/libcontainer/system"
+	"github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/net/context"
+	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	grpcStatus "google.golang.org/grpc/status"
 	"io/ioutil"
 	"net"
 	"os"
@@ -22,20 +36,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/gogo/protobuf/proto"
-	"github.com/kata-containers/agent/pkg/uevent"
-	pb "github.com/kata-containers/agent/protocols/grpc"
-	"github.com/opencontainers/runc/libcontainer"
-	"github.com/opencontainers/runc/libcontainer/configs"
-	_ "github.com/opencontainers/runc/libcontainer/nsenter"
-	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
-	"golang.org/x/sys/unix"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	grpcStatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -623,6 +623,7 @@ func (s *sandbox) signalHandlerLoop(sigCh chan os.Signal) {
 
 func (s *sandbox) setupSignalHandler() error {
 	// Set agent as subreaper
+
 	err := unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, uintptr(1), 0, 0, 0)
 	if err != nil {
 		return err
@@ -1047,6 +1048,17 @@ func realMain() {
 	s.startGRPC()
 
 	go s.listenToUdevEvents()
+
+	go func(){
+		for {
+			reap, err := system.GetSubreaper()
+			if err == nil {
+				agentLog.Infof("==================================subreaper:%v", reap)
+			}
+
+			time.Sleep(time.Second)
+		}
+	}()
 
 	s.wg.Wait()
 }
